@@ -1,0 +1,49 @@
+name: Build ESP32 firmware
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install tools
+        run: pip install platformio "esptool<5"
+
+      - name: Compile
+        run: pio run
+
+      - name: Merge into one image (flash at 0x0)
+        run: |
+          B=.pio/build/esp32dev
+          APP0=$(find ~/.platformio -name boot_app0.bin | head -1)
+          esptool.py --chip esp32 merge_bin -o wing-light-merged.bin \
+            --flash_mode dio --flash_freq 40m --flash_size 4MB \
+            0x1000 $B/bootloader.bin \
+            0x8000 $B/partitions.bin \
+            0xe000 "$APP0" \
+            0x10000 $B/firmware.bin
+          ls -l wing-light-merged.bin
+
+      - name: Publish as a release (direct .bin download)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Build ${{ github.run_number }}
+          files: wing-light-merged.bin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wing-light-merged
+          path: wing-light-merged.bin
